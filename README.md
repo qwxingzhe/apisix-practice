@@ -1,72 +1,104 @@
-# APISIX插件开发
+<!--
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+-->
 
-> 截至2020.12.27，基于docker运行的最新版apisix及dashboard不支持插件的配置更新以及未未安装lua环境等原因，处采用源码安装方式运行，本例OS为centos7。
+- [English](../../plugins/third-auth.md)
 
-### 1. 环境安装
+# 目录
+- [目录](#目录)
+  - [名字](#名字)
+  - [属性](#属性)
+  - [如何启用](#如何启用)
+  - [测试插件](#测试插件)
+  - [禁用插件](#禁用插件)
+  - [示例](#示例)
+  - [后续开发](#后续开发)
 
-#### 1.1 安装依赖 [链接](https://github.com/apache/apisix/blob/master/doc/zh-cn/install-dependencies.md#centos-7)：
-~~~
-# 安装 epel, `luarocks` 需要它
-wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
-sudo rpm -ivh epel-release-latest-7.noarch.rpm
+## 名字
 
-# 安装 etcd
-wget https://github.com/etcd-io/etcd/releases/download/v3.4.13/etcd-v3.4.13-linux-amd64.tar.gz
-tar -xvf etcd-v3.4.13-linux-amd64.tar.gz && \
-    cd etcd-v3.4.13-linux-amd64 && \
-    sudo cp -a etcd etcdctl /usr/bin/
+`third-auth` 是和 第三方鉴权服务 配合使用的鉴权插件。
 
-# 添加 OpenResty 源
-sudo yum install yum-utils
-sudo yum-config-manager --add-repo https://openresty.org/package/centos/openresty.repo
+## 属性
 
-# 安装 OpenResty 和 编译工具
-sudo yum install -y openresty curl git gcc luarocks lua-devel
+| 名称      | 类型    | 必选项 | 默认值 | 有效值      | 描述                                   |
+| --------- | ------- | ------ | ------ | ----------- | -------------------------------------- |
+| third_url | string  | 必须   |        | [1, 4096]   |                                        |  |
+| timeout   | integer | 可选   | 3000   | [1000, ...] | 与身份认证服务器的 http 连接的超时时间 |
 
-# 开启 etcd server
-nohup etcd &
-~~~
+## 如何启用
 
-#### 1.2 安装apisix
-~~~
-cd /usr/local/
+创建一个 `route` 对象，并在该 `route` 对象上启用 `third-auth` 插件：
 
-# 下载最新的源码发布包：
-mkdir apisix-2.1
-wget https://downloads.apache.org/apisix/2.1/apache-apisix-2.1-src.tgz
-tar zxvf apache-apisix-2.1-src.tgz -C apisix-2.1
+```shell
+curl http://127.0.0.1:9080/apisix/admin/routes/5 -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1' -X PUT -d '
+{
+    "uri": "/get",
+    "plugins": {
+        "third-auth": {
+            "third_url": "http://127.0.0.1:8090/third-auth"
+        }
+    },
+    "upstream": {
+        "type": "roundrobin",
+        "nodes": {
+            "127.0.0.1:8080": 1
+        }
+    }
+}
+```
 
-# 安装运行时依赖的 Lua 库
-cd apisix-2.1/
-make deps
+## 测试插件
 
-# 检查 APISIX 的版本号：
-./bin/apisix version
+```shell
+curl http://127.0.0.1:9080/get -H 'Authorization: Bearer {JWT Token}'
+```
 
-# 启动 APISIX:
-./bin/apisix start
-~~~
+## 禁用插件
 
+在插件设置页面中删除相应的 json 配置即可禁用 `third-auth` 插件。APISIX 的插件是热加载的，因此无需重启 APISIX 服务。
 
+```shell
+curl http://127.0.0.1:9080/apisix/admin/routes/5 -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1' -X PUT -d '
+{
+    "uri": "/get",
+    "plugins": {
+    },
+    "upstream": {
+        "type": "roundrobin",
+        "nodes": {
+            "127.0.0.1:8080": 1
+        }
+    }
+}
+```
 
-### 2. 插件开发过程中涉及的相关接口
+## 示例
 
-> 截至2020.12.27，官网文档未提供插件信息获取接口，以下两个接口阅读源码获取。
+请查看 third-auth.t 中的单元测试来了解如何将身份认证策略与您的 API 工作流集成。运行以下 docker 镜像并访问 `http://localhost:8595` 来查看单元测试中绑定的访问策略：
 
-~~~
-# 获取插件列表
-curl "http://127.0.0.1:9080/apisix/admin/plugins/list" -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1'
+```bash
+docker run -e KEYCLOAK_USER=admin -e KEYCLOAK_PASSWORD=123456 -p 8090:8080 sshniro/keycloak-apisix
+```
 
-# 获取插件详情
-curl "http://127.0.0.1:9080/apisix/admin/plugins/{plugin_name}" -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1'
-~~~
+下面这张截图显示了如何在 Keycloak 服务器上配置访问策略：
 
+![Keycloak policy design](../../images/plugin/third-auth.png)
 
+## 后续开发
 
-### 3. 动手开发
-#### 3.1 首先阅读官方几篇插件相关文档
-- [Apache APISIX 文档索引](https://github.com/apache/apisix/blob/master/doc/zh-cn/README.md)
-- [插件开发指南](https://github.com/apache/apisix/blob/master/doc/zh-cn/plugin-develop.md)
-- [示例插件 echo](https://github.com/apache/apisix/blob/master/doc/zh-cn/plugins/echo.md)
-
-
+- 支持追加header及url参数，以便将认证信息传递给后方业务服务使用。
