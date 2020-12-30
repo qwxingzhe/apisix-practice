@@ -32,6 +32,7 @@ nohup etcd &
 cd /usr/local/
 
 # 下载最新的源码发布包：
+# 亦可拉取master分支最新代码：git clone https://github.com/apache/apisix.git
 mkdir apisix-2.1
 wget https://downloads.apache.org/apisix/2.1/apache-apisix-2.1-src.tgz
 tar zxvf apache-apisix-2.1-src.tgz -C apisix-2.1
@@ -114,7 +115,7 @@ npm config set registry http://registry.npm.taobao.org
 
 # 单独执行cypress安装
 cd apisix-dashboard/web
-cd npm install cypress --save-dev
+npm install cypress --save-dev
 ~~~
 
 ### 2. 插件开发过程中涉及的相关接口
