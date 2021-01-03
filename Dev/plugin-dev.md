@@ -100,7 +100,17 @@ git clone https://github.com/apache/apisix-dashboard.git
 
 # Build
 cd apisix-dashboard
-make build # 前端构建部分存在下载失败、慢等情况，可能需要执行多次
+make build # 前端构建部分存在下载失败、慢等情况，可能需要执行多次，也可按番外篇操作
+
+# vi conf/conf.yaml
+# 将 conf.listen.host 从 127.0.0.1 改为 0.0.0.0 以便开发环境从外部访问
+
+cd ./output
+./manager-api
+
+# or running in background
+nohup ./manager-api &
+
 ~~~
 
 ##### 番外篇
@@ -113,17 +123,17 @@ yum -y install gcc gcc-c++ autoconf libjpeg libjpeg-devel libpng libpng-devel fr
 # 设置npm代理
 npm config set registry http://registry.npm.taobao.org
 
-# 单独执行cypress安装
+# 使用 npm/cnpm 安装相关依赖
 cd apisix-dashboard/web
-npm install cypress --save-dev
+npm install
+
+cd ..
+make build
 ~~~
 
 ### 2. 插件开发过程中涉及的相关接口
 
 #### 2.1 插件信息接口
-
-> 截至2020.12.27，官网文档未提供插件信息获取接口，以下两个接口阅读源码获取。
-
 ~~~
 # 获取插件列表
 curl "http://127.0.0.1:9080/apisix/admin/plugins/list" -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1'
@@ -151,6 +161,8 @@ curl "http://127.0.0.1:9080/apisix/admin/plugins/{plugin_name}" -H 'X-API-KEY: e
 # 3. 修改`conf/config.yaml`，在`plugins:`下新增`third-auth`（如无，可从`config-default.yaml`复制过来）；
 # 4. 重启apisix：`./bin/apisix restart`；
 # 5. 获取插件列表，检查是否已存在；
+curl "http://127.0.0.1:9080/apisix/admin/plugins/third-auth" -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1'
+
 # 6. 修改实现`third-auth`插件功能；
 # 7. 创建路由，并附带插件；
 curl "http://127.0.0.1:9080/apisix/admin/routes/5" -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1' -X PUT -d '
@@ -158,12 +170,42 @@ curl "http://127.0.0.1:9080/apisix/admin/routes/5" -H 'X-API-KEY: edd1c9f034335f
     "uri": "/get",
     "host": "httpbin.org",
     "plugins": {
-        "proxy-rewrite": {
+        "third-auth": {
           "scheme": "https"
         }
     },
     "upstream_id": 50
 }'
 
+
+curl http://127.0.0.1:9080/apisix/admin/routes/5 -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1' -X PUT -d '
+{
+    "uri": "/get",
+    "plugins": {
+        "third-auth": {
+            "third_url": "http://ms.youjiuhealth.com/auth/report"
+        }
+    },
+    "upstream": {
+        "type": "roundrobin",
+        "nodes": {
+            "192.168.102.129:8090": 1
+        }
+    }
+}'
+
+# apisix-dashboard
+./api/build-tools/schema-sync.sh /usr/local/apisix
+
+
+
 # 8. 请求路由测试是否生效；
+# 查看指定路由
+curl http://127.0.0.1:9080/apisix/admin/routes/5 -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1'
+
+# 模拟请求路由
+curl --silent -H "Host: msykapi.cc" "127.0.0.1:8090/home"
+curl --location --request GET "http://msykapi.cc/home"
+curl -i -X GET "127.0.0.1:8090/home" -H "Host: msykapi.cc"
+
 ~~~

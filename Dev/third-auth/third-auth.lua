@@ -23,6 +23,7 @@ local ngx       = ngx
 local plugin_name = "third-auth"
 
 
+
 local schema = {
     type = "object",
     properties = {
@@ -49,7 +50,61 @@ function _M.check_schema(conf)
     return core.schema.check(schema, conf)
 end
 
-local function evaluate_permissions(conf, token)
+local function fetch_req_data(ctx)
+    core.log.warn("0.0================================================>")
+    core.log.warn(core.json.encode(core.request.get_body(nil, ctx)))
+    core.log.warn(type(core.request.get_body(nil, ctx)))
+    core.log.warn(core.json.encode(core.request.get_body(100, ctx)))
+    core.log.warn(type(core.request.get_body(100, ctx)))
+    core.log.warn("0.1================================================>")
+    core.log.warn(type(core.request.headers))
+    core.log.warn(core.json.encode(core.request.headers))
+    core.log.warn("0.2================================================>")
+    local uri_args = ngx.req.get_uri_args() or {}
+    core.log.warn(type(uri_args))
+    core.log.warn(core.json.encode(uri_args))
+    core.log.warn("0.3================================================>")
+    local headers = ngx.req.get_headers() or {}
+    core.log.warn(type(headers))
+    core.log.warn(core.json.encode(headers))
+    core.log.warn("0.4================================================>")
+    local body = ngx.req.read_body() or {}
+    core.log.warn(type(body))
+    core.log.warn(core.json.encode(body))
+    core.log.warn("0.5================================================>")
+    local post_args = ngx.req.get_post_args() or {}
+    core.log.warn(type(post_args))
+    core.log.warn(core.json.encode(post_args))
+    
+    
+
+    return {
+        -- ip = core.request.get_ip(ctx),
+        -- remote_client_ip = core.request.get_remote_client_ip(ctx),
+        -- host = core.request.get_host(ctx),
+        -- port = core.request.get_port(ctx),
+        -- http_version = core.request.get_http_version(ctx),
+        -- uri_args
+        uri_args = core.json.encode(uri_args),
+        post_args = core.json.encode(post_args),
+        -- headers
+        -- headers = core.json.encode(headers),
+        -- req_url = "www.yunceku.com",
+        -- req_param = "=req_param",
+        -- req_header = "=req_header"
+    }
+end
+
+local function fetch_token(ctx)
+    local token = core.request.header(ctx, "authorization")
+    if not token then
+        return nil
+    end
+
+    return token
+end
+
+local function evaluate_permissions(conf, req_data, token)
     local url_decoded = url.parse(conf.third_url)
     local host = url_decoded.host
     local port = url_decoded.port
@@ -62,15 +117,15 @@ local function evaluate_permissions(conf, token)
         end
     end
 
-
     local httpc = http.new()
     httpc:set_timeout(conf.timeout)
 
+
+    --core.json.encode(req_body),   --ngx.encode_args(),
     local params = {
         method = "POST",
-        body =  ngx.encode_args({
-            req_url = "http://www.baidu.com"
-        }),
+        -- query = req_data,
+        body =  req_data,
         ssl_verify = conf.ssl_verify,
         headers = {
             ["Content-Type"] = "application/x-www-form-urlencoded",
@@ -85,11 +140,15 @@ local function evaluate_permissions(conf, token)
         params.keepalive = conf.keepalive
     end
 
+    core.log.warn("2================================================>")
+    core.log.warn(conf.third_url)
+    core.log.warn(req_data)
+    core.log.warn(core.json.encode(params))
+
     local httpc_res, httpc_err = httpc:request_uri(conf.third_url, params)
 
     if not httpc_res then
-        core.log.error("error while sending authz request to [", host ,"] port[",
-                        tostring(port), "] ", httpc_err)
+        core.log.error("error while sending authz request to [", host ,"] port[",tostring(port), "] ", httpc_err)
         return 500, httpc_err
     end
 
@@ -100,25 +159,18 @@ local function evaluate_permissions(conf, token)
 end
 
 
-local function fetch_token(ctx)
-    local token = core.request.header(ctx, "authorization")
-    if not token then
-        return nil, "authorization header not available"
-    end
-
-    return token
-end
-
 
 function _M.rewrite(conf, ctx)
     core.log.debug("hit third-auth rewrite")
-    local token, err = fetch_token(ctx)
-    if not token then
-        core.log.error("failed to fetch token: ", err)
-        return 401, {message = "Missing token in request"}
-    end
 
-    local status, body = evaluate_permissions(conf, token)
+    local req_data = fetch_req_data(ctx)
+    local token = fetch_token(ctx)
+
+    core.log.warn("1================================================>")
+    req_data = core.json.encode(req_data)
+    core.log.warn(req_data)
+
+    local status, body = evaluate_permissions(conf, req_data, token)
     if status then
         return status, body
     end
